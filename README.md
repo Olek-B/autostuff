@@ -26,8 +26,8 @@ A friendly experiment that sends morning messages to remind friends what day it 
 
 ```
 autoclothes/
-├── bot.py                  # Main Telegram bot (feature aggregator)
-├── discord_bot.py          # Standalone Discord bot (independent)
+├── bot.py                  # Telegram bot (long polling, local dev)
+├── web_app.py              # Flask web app (webhooks, PythonAnywhere free tier)
 ├── config.py               # Configuration with feature toggles
 ├── database.py             # Shared database layer
 ├── services.py             # Shared services (weather, AI)
@@ -66,11 +66,11 @@ pip install -r requirements.txt
 cp .env.example .env
 # Edit .env with your credentials
 
-# Run the Telegram bot
+# Run the Telegram bot (long polling)
 python bot.py
 
-# Run the Discord bot (separate terminal)
-python discord_bot.py
+# Run the web app (for webhooks)
+python web_app.py
 ```
 
 ### Environment Configuration
@@ -92,14 +92,18 @@ NEWS_TRACKING_ENABLED=false
 PRICE_TRACKING_ENABLED=false
 ```
 
-## PythonAnywhere Deployment
+## PythonAnywhere Deployment (Free Tier)
 
-### Telegram Bot
+PythonAnywhere free tier doesn't include always-on tasks, but you can use:
+- **Free web app** + **cron-job.org** for scheduled tasks
+
+### Option 1: Web App + cron-job.org (Free)
 
 1. **Upload Files** to your PythonAnywhere home directory:
    ```
    /home/yourusername/autoclothes/
-   ├── bot.py
+   ├── web_app.py           # Flask web app for webhooks
+   ├── bot.py               # (optional, for local dev)
    ├── config.py
    ├── database.py
    ├── services.py
@@ -114,17 +118,70 @@ PRICE_TRACKING_ENABLED=false
    pip install -r requirements.txt --user
    ```
 
-3. **Create Always-On Task**:
-   - Go to **Tasks** tab → **Always-on tasks**
-   - Click **Add a new always-on task**
-   - Command: `/home/yourusername/.local/bin/python /home/yourusername/autoclothes/bot.py`
+3. **Configure Web App**:
+   - Go to **Web** tab in PythonAnywhere
+   - Click **Add a new web app**
+   - Choose **Flask** → **Python 3.10** (or your version)
+   - Set source code path: `/home/yourusername/autoclothes/web_app.py`
+   - Edit WSGI configuration file:
+     ```python
+     import sys
+     path = '/home/yourusername/autoclothes'
+     if path not in sys.path:
+         sys.path.insert(0, path)
+     
+     from web_app import app as application
+     ```
 
-### Discord Bot (Separate)
+4. **Set Environment Variables** (in Web tab → Virtualenv):
+   ```bash
+   SECRET_KEY=your_random_secret
+   ALLOWED_USER_ID=123456789
+   TELEGRAM_BOT_TOKEN=your_token
+   GROQ_API_KEY=your_key
+   DISCORD_BOT_TOKEN=your_discord_token
+   CHANNEL_ID=your_channel_id
+   LATITUDE=51.5074
+   LONGITUDE=-0.1278
+   ```
 
-1. **Create Separate Always-On Task**:
-   - Command: `/home/yourusername/.local/bin/python /home/yourusername/autoclothes/discord_bot.py`
+5. **Configure cron-job.org** (free external cron service):
+   
+   Sign up at [cron-job.org](https://cron-job.org) and add these URLs:
+   
+   | Task | URL | Schedule |
+   |------|-----|----------|
+   | Daily Outfit | `https://yourusername.pythonanywhere.com/daily-outfit?key=YOUR_SECRET` | `0 7 * * *` (7:00 AM) |
+   | Discord Day | `https://yourusername.pythonanywhere.com/discord-day?key=YOUR_SECRET` | `0 8 * * *` (8:00 AM) |
+   | Weekly Laundry | `https://yourusername.pythonanywhere.com/reset-laundry?key=YOUR_SECRET` | `0 2 * * 0` (Sunday 2:00 AM) |
 
-2. **Optional: Set up webhook trigger** via cron job or external service
+6. **Test Endpoints**:
+   ```bash
+   curl "https://yourusername.pythonanywhere.com/health"
+   curl "https://yourusername.pythonanywhere.com/daily-outfit?key=YOUR_SECRET"
+   ```
+
+### Option 2: Always-On Task (Paid Tier)
+
+If you have a paid PythonAnywhere account:
+
+1. **Telegram Bot** - Create Always-On Task:
+   ```
+   /home/yourusername/.local/bin/python /home/yourusername/autoclothes/bot.py
+   ```
+
+2. **Discord Bot** - Create Always-On Task:
+   ```
+   /home/yourusername/.local/bin/python /home/yourusername/autoclothes/discord_bot.py
+   ```
+
+### Option 3: Local + Webhook (Hybrid)
+
+Run the web app on PythonAnywhere (free) and run bots locally:
+
+1. Deploy `web_app.py` on PythonAnywhere
+2. Run `bot.py` and `discord_bot.py` on your local machine or Raspberry Pi
+3. Use PythonAnywhere web app only for scheduled tasks via cron-job.org
 
 ## Bot Commands
 
@@ -252,38 +309,26 @@ MIT License
 
 ---
 
-# Discord Bot (Standalone)
+# Discord "What Day Is It" Bot
 
-A simple bot that sends morning messages to remind your friends what day it is.
+A friendly experiment to remind your Las Vegas friends what day it is via Discord.
 
-## Setup
-
-```bash
-# Install additional dependencies
-pip install discord.py flask
-
-# Configure in .env
-DISCORD_BOT_TOKEN=your_token
-CHANNEL_ID=your_channel_id
-SECRET_KEY=your_secret
-```
-
-## Run Locally
-
-```bash
-python discord_bot.py
-```
+Sends a daily morning message with:
+- 🌡️ Las Vegas weather with funny commentary
+- 🎉 Name days (from imieniny.vercel.app)
+- 🚦 Traffic jokes
+- 🎊 Weekend party advice
 
 ## Deploy on PythonAnywhere
 
-Create a separate **Always-On Task**:
-```
-/home/yourusername/.local/bin/python /home/yourusername/autoclothes/discord_bot.py
+The Discord bot is built into the web app. Configure in `.env`:
+
+```bash
+DISCORD_BOT_TOKEN=your_token
+CHANNEL_ID=your_channel_id
 ```
 
-## API Endpoints
-
-| Endpoint | Description |
-|----------|-------------|
-| `GET /daily?key=SECRET_KEY` | Trigger daily message |
-| `GET /health` | Health check |
+Then set up cron-job.org to hit:
+```
+https://yourusername.pythonanywhere.com/discord-day?key=SECRET_KEY
+```
