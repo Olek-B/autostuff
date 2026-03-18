@@ -16,8 +16,5 @@ typing-extensions>=4.8.0
 # Environment variable management
 python-dotenv>=1.0.0
 
-# Discord Bot (for web_app.py webhook endpoint)
-discord.py>=2.3.0
-
 # Flask web server
 flask>=3.0.0

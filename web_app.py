@@ -39,9 +39,8 @@ app = Flask(__name__)
 
 SECRET_KEY = os.environ.get("SECRET_KEY")
 ALLOWED_USER_ID = int(os.environ.get("ALLOWED_USER_ID", "0"))
+DAY_MESSAGE_USER_ID = int(os.environ.get("DAY_MESSAGE_USER_ID", ALLOWED_USER_ID))
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-DISCORD_BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN")
-CHANNEL_ID = int(os.environ.get("CHANNEL_ID", "0"))
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 LATITUDE = float(os.environ.get("LATITUDE", "51.5074"))
 LONGITUDE = float(os.environ.get("LONGITUDE", "-0.1278"))
@@ -62,13 +61,16 @@ def check_auth(key: str) -> bool:
 # TELEGRAM HELPERS
 # =============================================================================
 
-async def send_telegram_message(text: str) -> bool:
+async def send_telegram_message(text: str, chat_id: int = None) -> bool:
     """Send message via Telegram bot API."""
     import httpx
-    
+
+    if chat_id is None:
+        chat_id = ALLOWED_USER_ID
+
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     data = {
-        "chat_id": ALLOWED_USER_ID,
+        "chat_id": chat_id,
         "text": text,
         "parse_mode": "Markdown"
     }
@@ -134,14 +136,14 @@ async def get_daily_outfit() -> str:
 
 
 # =============================================================================
-# DISCORD HELPERS
+# TELEGRAM HELPERS - WHAT DAY IS IT
 # =============================================================================
 
 async def get_weather_vegas() -> tuple[int, str, str]:
     """Fetch Las Vegas weather."""
     lat = 36.1699
     lon = -115.1398
-    
+
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(
@@ -155,17 +157,17 @@ async def get_weather_vegas() -> tuple[int, str, str]:
             )
             response.raise_for_status()
             data = response.json()
-        
+
         temp_c = data.get("current", {}).get("temperature_2m", 70)
         temp_f = round((temp_c * 9/5) + 32)
-        
+
         if temp_f >= 90:
             descriptor, comment = "boiling", "Better find a pool—or become one!"
         elif temp_f <= 50:
             descriptor, comment = "chilling", "Time to dig out that 'Vegas cold' jacket!"
         else:
             descriptor, comment = "sane", "Almost too normal. Almost."
-        
+
         return temp_f, descriptor, comment
     except Exception as e:
         logger.error(f"Weather error: {e}")
@@ -176,13 +178,13 @@ async def get_name_days() -> tuple[str, str]:
     """Fetch name days from API."""
     today = datetime.now()
     date_str = f"{today.month:02d}{today.day:02d}{today.year % 100:02d}"
-    
+
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(f"https://imieniny.vercel.app/{date_str}")
             response.raise_for_status()
             names = response.json()
-        
+
         if not names:
             return "No one", "is"
         elif len(names) == 1:
@@ -204,54 +206,34 @@ def get_party_advice() -> str:
     return "remember tomorrow's a workday, so maybe don't go overboard!"
 
 
-async def format_discord_message() -> str:
-    """Format the complete daily Discord message."""
+async def format_day_message() -> str:
+    """Format the complete daily 'What Day Is It' message for Telegram."""
     today = datetime.now()
     day_of_week = today.strftime("%A")
     temp_f, descriptor, descriptor_comment = await get_weather_vegas()
     names, names_plural = await get_name_days()
     party_advice = get_party_advice()
-    
-    return f"""GOOOOOD MORNING, LAS VEGAS! 
-This is your daily dose of "What Day Is It, Anyway?" – I've got the answers you're too lazy to look up yourself!
 
-🌡️ **Today is {day_of_week}**, and on the **Insane Scale** we're clocking in at a {descriptor} {temp_f}°F! 
-{descriptor_comment} 
+    return f"""🌟 *GOOD MORNING, LAS VEGAS!* 🌟
 
-🎉 **Name Day Alert!** 
-{names} {names_plural} celebrating their Name Day today! If you know 'em, give 'em a high-five, a donut, or at least a weird look. 
+This is your daily dose of *"What Day Is It, Anyway?"* – I've got the answers you're too lazy to look up yourself!
+
+🌡️ *Today is {day_of_week}*, and on the *Insane Scale* we're clocking in at a {descriptor} {temp_f}°F!
+{descriptor_comment}
+
+🎉 *Name Day Alert!*
+{names} {names_plural} celebrating their Name Day today! If you know 'em, give 'em a high-five, a donut, or at least a weird look.
 Just {party_advice}
 
-🚦 **Traffic Snapshot:** Probably still backed up on the 15. Shocking, right? 
+🚦 *Traffic Snapshot:* Probably still backed up on the 15. Shocking, right?
 
 Remember: Life's too short to remember weekdays—that's my job. Stay awesome, Vegas!"""
 
 
-async def send_discord_day_message() -> bool:
-    """Send 'what day is it' message via Discord."""
-    import discord
-    
-    try:
-        intents = discord.Intents.default()
-        client = discord.Client(intents=intents)
-        
-        @client.event
-        async def on_ready():
-            channel = client.get_channel(CHANNEL_ID)
-            if channel:
-                message = await format_discord_message()
-                await channel.send(message)
-                logger.info(f"Sent Discord message to channel {CHANNEL_ID}")
-            else:
-                logger.error(f"Discord channel {CHANNEL_ID} not found")
-            await client.close()
-        
-        await client.start(DISCORD_BOT_TOKEN)
-        return True
-        
-    except Exception as e:
-        logger.error(f"Discord error: {e}")
-        return False
+async def send_day_message() -> bool:
+    """Send 'what day is it' message via Telegram."""
+    message = await format_day_message()
+    return await send_telegram_message(message, chat_id=DAY_MESSAGE_USER_ID)
 
 
 # =============================================================================
@@ -290,23 +272,23 @@ async def daily_outfit():
 @app.route("/discord-day")
 async def discord_day():
     """
-    Trigger 'what day is it' Discord message.
+    Trigger 'what day is it' message via Telegram.
     Usage: GET /discord-day?key=SECRET_KEY
     """
     if not check_auth(request.args.get("key")):
         return jsonify({"error": "Unauthorized"}), 403
-    
-    if not DISCORD_BOT_TOKEN:
-        return jsonify({"error": "Discord not configured"}), 503
-    
-    logger.info(f"Discord day message triggered by {request.remote_addr}")
-    
-    success = await send_discord_day_message()
-    
+
+    if not TELEGRAM_BOT_TOKEN:
+        return jsonify({"error": "Telegram not configured"}), 503
+
+    logger.info(f"Day message triggered by {request.remote_addr}")
+
+    success = await send_day_message()
+
     if success:
-        return jsonify({"status": "sent", "type": "discord-day"}), 200
+        return jsonify({"status": "sent", "type": "day-message"}), 200
     else:
-        return jsonify({"status": "failed", "error": "Discord API error"}), 500
+        return jsonify({"status": "failed", "error": "Telegram API error"}), 500
 
 
 @app.route("/reset-laundry")

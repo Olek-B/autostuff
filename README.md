@@ -13,9 +13,14 @@ AI-powered daily outfit suggestions using weather data and your personal wardrob
 - 📅 **Laundry Tracking**: Prevents outfit repetition within 7-day window
 - ⏰ **Daily Suggestions**: Automatic outfit push at 7:00 AM
 
-### 🤖 Discord Bot (Standalone experiment)
+### 📅 What Day Is It? (Telegram)
 
-A friendly experiment that sends morning messages to remind friends what day it is. Runs completely independently from the Telegram bot.
+A friendly experiment that sends morning messages to remind your Las Vegas friends what day it is.
+
+- 🌡️ **Las Vegas Weather**: Funny commentary on the current temperature
+- 🎉 **Name Days**: Daily name day notifications
+- 🚦 **Traffic Jokes**: Light-hearted traffic commentary
+- 🎊 **Weekend Advice**: Party advice based on whether it's the weekend
 
 ### 🔮 Coming Soon
 
@@ -48,10 +53,10 @@ AutoClothes requires:
 └── GROQ_API_KEY (for AI outfit suggestions)
 
 News Tracking (future) requires:
-└── TELEGRAM_BOT_TOKEN or DISCORD_BOT_TOKEN
+└── TELEGRAM_BOT_TOKEN
 
 Price Tracking (future) requires:
-└── TELEGRAM_BOT_TOKEN or DISCORD_BOT_TOKEN
+└── TELEGRAM_BOT_TOKEN
 ```
 
 ## Quick Start
@@ -139,20 +144,18 @@ PythonAnywhere free tier doesn't include always-on tasks, but you can use:
    ALLOWED_USER_ID=123456789
    TELEGRAM_BOT_TOKEN=your_token
    GROQ_API_KEY=your_key
-   DISCORD_BOT_TOKEN=your_discord_token
-   CHANNEL_ID=your_channel_id
    LATITUDE=51.5074
    LONGITUDE=-0.1278
    ```
 
 5. **Configure cron-job.org** (free external cron service):
-   
+
    Sign up at [cron-job.org](https://cron-job.org) and add these URLs:
-   
+
    | Task | URL | Schedule |
    |------|-----|----------|
    | Daily Outfit | `https://yourusername.pythonanywhere.com/daily-outfit?key=YOUR_SECRET` | `0 7 * * *` (7:00 AM) |
-   | Discord Day | `https://yourusername.pythonanywhere.com/discord-day?key=YOUR_SECRET` | `0 8 * * *` (8:00 AM) |
+   | What Day Is It | `https://yourusername.pythonanywhere.com/discord-day?key=YOUR_SECRET` | `0 8 * * *` (8:00 AM) |
    | Weekly Laundry | `https://yourusername.pythonanywhere.com/reset-laundry?key=YOUR_SECRET` | `0 2 * * 0` (Sunday 2:00 AM) |
 
 6. **Test Endpoints**:
@@ -170,17 +173,12 @@ If you have a paid PythonAnywhere account:
    /home/yourusername/.local/bin/python /home/yourusername/autoclothes/bot.py
    ```
 
-2. **Discord Bot** - Create Always-On Task:
-   ```
-   /home/yourusername/.local/bin/python /home/yourusername/autoclothes/discord_bot.py
-   ```
-
 ### Option 3: Local + Webhook (Hybrid)
 
 Run the web app on PythonAnywhere (free) and run bots locally:
 
 1. Deploy `web_app.py` on PythonAnywhere
-2. Run `bot.py` and `discord_bot.py` on your local machine or Raspberry Pi
+2. Run `bot.py` on your local machine or Raspberry Pi
 3. Use PythonAnywhere web app only for scheduled tasks via cron-job.org
 
 ## Bot Commands
@@ -309,9 +307,9 @@ MIT License
 
 ---
 
-# Discord "What Day Is It" Bot
+# What Day Is It? - Morning Messages
 
-A friendly experiment to remind your Las Vegas friends what day it is via Discord.
+A friendly experiment to remind your Las Vegas friends what day it is via Telegram.
 
 Sends a daily morning message with:
 - 🌡️ Las Vegas weather with funny commentary
@@ -321,14 +319,19 @@ Sends a daily morning message with:
 
 ## Deploy on PythonAnywhere
 
-The Discord bot is built into the web app. Configure in `.env`:
+The day messages are built into the web app. Configure in `.env`:
 
 ```bash
-DISCORD_BOT_TOKEN=your_token
-CHANNEL_ID=your_channel_id
+TELEGRAM_BOT_TOKEN=your_token
+ALLOWED_USER_ID=your_user_id
+
+# Optional: Send day messages to a different user (defaults to ALLOWED_USER_ID)
+DAY_MESSAGE_USER_ID=other_user_id
 ```
 
 Then set up cron-job.org to hit:
 ```
 https://yourusername.pythonanywhere.com/discord-day?key=SECRET_KEY
 ```
+
+Note: The endpoint is still called `/discord-day` for backward compatibility, but it now sends messages via Telegram instead of Discord.
