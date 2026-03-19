@@ -159,11 +159,13 @@ async def cmd_add(update: Update, context) -> None:
 
     args = context.args
 
-    if len(args) < 4:
+    if len(args) < 3:
         await update.message.reply_text(
             "❌ Invalid format.\n\n"
             "Usage: /add <name> <category> <min_temp> <max_temp>\n"
-            "Example: /add \"Blue Shirt\" top 15 30\n\n"
+            "   or: /add <name> <category> auto (AI estimates temperature)\n\n"
+            "Example: /add \"Blue Shirt\" top 15 30\n"
+            "Example: /add \"Wool Sweater\" top auto\n\n"
             "Categories: top, bottom, shoes, outer"
         )
         return
@@ -178,13 +180,13 @@ async def cmd_add(update: Update, context) -> None:
         item_name = args[0].strip('"')
         remaining = args[1:]
 
-    if len(remaining) < 3:
+    if len(remaining) < 2:
         await update.message.reply_text("❌ Missing category or temperature values.")
         return
 
     category = remaining[0].lower()
     valid_categories = {"top", "bottom", "shoes", "outer"}
-    
+
     if category not in valid_categories:
         await update.message.reply_text(
             f"❌ Invalid category '{category}'.\n"
@@ -192,29 +194,73 @@ async def cmd_add(update: Update, context) -> None:
         )
         return
 
-    try:
-        min_temp = int(remaining[1])
-        max_temp = int(remaining[2])
-
-        if min_temp < -20 or max_temp > 50:
-            raise ValueError("Temperature out of reasonable range")
-        if min_temp >= max_temp:
-            raise ValueError("min_temp must be less than max_temp")
-
-    except ValueError as e:
+    # Check if using AI temperature estimation
+    temp_arg = remaining[1].lower()
+    
+    if temp_arg == "auto":
+        # AI-based temperature estimation
         await update.message.reply_text(
-            f"❌ Invalid temperature values: {e}\n"
-            "Use integers between -20 and 50°C."
+            f"🤖 Analyzing \"{item_name}\" to estimate temperature range..."
         )
-        return
+        
+        try:
+            from config import config
+            from services import estimate_temperature_range
+            
+            groq_key = config.groq_api_key
+            if not groq_key:
+                raise ValueError("Groq API key not configured")
+            
+            min_temp, max_temp, reasoning = await estimate_temperature_range(
+                item_name, category, groq_key
+            )
+            
+            logger.info(f"AI temperature estimate for '{item_name}': {min_temp}-{max_temp}°C ({reasoning})")
+            
+        except Exception as e:
+            logger.warning(f"AI temperature estimation failed: {e}")
+            # Use default values
+            from services import DEFAULT_TEMP_RANGES
+            min_temp, max_temp = DEFAULT_TEMP_RANGES.get(category, (15, 25))
+            reasoning = "Default range (AI unavailable)"
+    else:
+        # Manual temperature specification
+        try:
+            if len(remaining) < 3:
+                raise ValueError("Missing max_temp")
+            
+            min_temp = int(remaining[1])
+            max_temp = int(remaining[2])
+
+            if min_temp < -20 or max_temp > 50:
+                raise ValueError("Temperature out of reasonable range (-20 to 50°C)")
+            if min_temp >= max_temp:
+                raise ValueError("min_temp must be less than max_temp")
+            
+            reasoning = "Manual specification"
+
+        except ValueError as e:
+            await update.message.reply_text(
+                f"❌ Invalid temperature values: {e}\n"
+                "Use integers between -20 and 50°C, or use 'auto' for AI estimation."
+            )
+            return
 
     try:
         item_id = await add_wardrobe_item(item_name, category, min_temp, max_temp)
-        await update.message.reply_text(
-            f"✅ Added '{item_name}' to wardrobe.\n"
+        
+        # Show confirmation with temperature source
+        confirmation = (
+            f"✅ Added '{item_name}' to wardrobe.\n\n"
             f"Category: {category}\n"
-            f"Temperature range: {min_temp}°C - {max_temp}°C"
+            f"Temperature range: {min_temp}°C - {max_temp}°C\n"
         )
+        
+        if temp_arg == "auto":
+            confirmation += f"\n💡 {reasoning}"
+        
+        await update.message.reply_text(confirmation)
+        
     except Exception as e:
         logger.error(f"Database error adding item: {e}")
         await update.message.reply_text("❌ Failed to add item. Please try again.")

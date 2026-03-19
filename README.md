@@ -225,6 +225,7 @@ Commands work via Telegram webhook - no always-on task needed!
 
 ### Adding Items
 
+**Manual temperature specification:**
 ```
 /add "Blue Oxford Shirt" top 15 30
 /add "Black Jeans" bottom 10 25
@@ -232,7 +233,26 @@ Commands work via Telegram webhook - no always-on task needed!
 /add "White Sneakers" shoes 10 35
 ```
 
+**AI temperature estimation (new!):**
+```
+/add "Thick Merino Wool Sweater" top auto
+/add "Light Linen Shirt" top auto
+/add "Fleece Hoodie" outer auto
+```
+
+The AI will analyze the item name and suggest an appropriate temperature range based on:
+- Fabric type (wool, cotton, linen, synthetic)
+- Thickness and weight
+- Coverage (long sleeve, short sleeve, etc.)
+- Style and layering potential
+
 **Categories**: `top`, `bottom`, `shoes`, `outer`
+
+**Temperature Tips:**
+- Use `auto` to let AI estimate (requires Groq API key)
+- Manual range: min_temp must be < max_temp
+- Valid range: -20°C to 50°C
+- AI falls back to category defaults if unavailable
 
 ## Scheduled Jobs
 

@@ -143,9 +143,9 @@ async def get_ai_outfit(
     prompt = _build_outfit_prompt(weather, items_by_category)
     
     client = AsyncGroq(api_key=groq_api_key)
-    
+
     response = await client.chat.completions.create(
-        model="llama-3.1-70b-versatile",
+        model="llama-3.3-70b-versatile",
         messages=[
             {
                 "role": "system",
@@ -249,20 +249,124 @@ async def get_fallback_outfit(
     Used when Groq API fails or returns invalid JSON.
     """
     import random
-    
+
     outfit = {"reasoning": f"Auto-selected based on {weather.conditions} weather ({weather.temperature:.1f}°C)"}
-    
+
     items_by_category: dict[str, list[dict[str, Any]]] = {}
     for item in available_items:
         cat = item["category"]
         if cat not in items_by_category:
             items_by_category[cat] = []
         items_by_category[cat].append(item)
-    
+
     for category in ["top", "bottom", "outer"]:
         if category in items_by_category:
             selected = random.choice(items_by_category[category])
             outfit[category] = selected["item_name"]
             outfit[f"{category}_id"] = selected["id"]
-    
+
     return outfit
+
+
+# =============================================================================
+# AI TEMPERATURE ESTIMATION
+# =============================================================================
+
+# Default temperature ranges by category (fallback if AI fails)
+DEFAULT_TEMP_RANGES = {
+    "top": (15, 25),
+    "bottom": (10, 25),
+    "outer": (5, 15),
+    "shoes": (10, 30),
+}
+
+
+async def estimate_temperature_range(
+    item_name: str,
+    category: str,
+    groq_api_key: str,
+    timeout: float = 15.0
+) -> tuple[int, int, str]:
+    """
+    Use Groq AI to estimate comfortable temperature range for a clothing item.
+
+    Args:
+        item_name: Name/description of the clothing item
+        category: Item category (top, bottom, shoes, outer)
+        groq_api_key: Groq API key for authentication
+        timeout: Request timeout in seconds
+
+    Returns:
+        Tuple of (min_temp, max_temp, reasoning) in Celsius
+
+    Raises:
+        GroqAPIError: On Groq API failures
+    """
+    client = AsyncGroq(api_key=groq_api_key)
+
+    prompt = f"""You are a fashion expert specializing in clothing comfort and temperature regulation.
+
+Estimate the comfortable temperature range (in Celsius) for this clothing item:
+
+**Item:** "{item_name}"
+**Category:** {category}
+
+Consider these factors:
+- Fabric type (wool=colder, cotton=moderate, linen=warmer, synthetic=varies)
+- Thickness/weight (thick/heavy=colder, thin/light=warmer)
+- Coverage (long sleeves=colder, short sleeves=warmer, sleeveless=hottest)
+- Style (turtleneck, tank top, hoodie, blazer, etc.)
+- Layering potential (can be worn over other clothes)
+
+Return ONLY valid JSON with this exact format:
+{{
+    "min_temp": <integer>,
+    "max_temp": <integer>,
+    "reasoning": "<brief explanation of your temperature estimate>"
+}}
+
+Temperature guidelines:
+- min_temp: Coldest temperature where this item alone would be comfortable
+- max_temp: Warmest temperature where this item alone would be comfortable
+- Range should typically span 10-20°C"""
+
+    try:
+        response = await client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a fashion assistant. Return ONLY valid JSON with min_temp, max_temp, and reasoning fields. Temperatures in Celsius."
+                },
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=300,
+            response_format={"type": "json_object"}
+        )
+
+        content = response.choices[0].message.content
+        if not content:
+            raise ValueError("Empty response from Groq API")
+
+        result = json.loads(content)
+
+        min_temp = int(result.get("min_temp", DEFAULT_TEMP_RANGES[category][0]))
+        max_temp = int(result.get("max_temp", DEFAULT_TEMP_RANGES[category][1]))
+        reasoning = result.get("reasoning", "AI-estimated temperature range")
+
+        # Validate temperature range
+        if min_temp >= max_temp:
+            min_temp, max_temp = DEFAULT_TEMP_RANGES[category]
+            reasoning = "AI suggestion adjusted (invalid range)"
+
+        if min_temp < -20 or max_temp > 50:
+            min_temp, max_temp = DEFAULT_TEMP_RANGES[category]
+            reasoning = "AI suggestion adjusted (out of range)"
+
+        return min_temp, max_temp, reasoning
+
+    except Exception as e:
+        # Fallback to default values
+        min_temp, max_temp = DEFAULT_TEMP_RANGES[category]
+        return min_temp, max_temp, f"Default range for {category} (AI unavailable)"
