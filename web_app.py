@@ -72,7 +72,7 @@ async def send_telegram_message(text: str, chat_id: int = None) -> bool:
     data = {
         "chat_id": chat_id,
         "text": text,
-        "parse_mode": "Markdown"
+        "parse_mode": "HTML"
     }
     
     try:
@@ -102,25 +102,26 @@ async def get_daily_outfit() -> str:
         available_items = await get_items_for_weather(weather.temperature)
         
         if not available_items:
-            return "🎯 *Today's Outfit*\n\n❌ No suitable clothes for this weather.\n\n💡 Add more versatile items to your wardrobe!"
-        
+            return "🎯 <b>Today's Outfit</b>\n\n❌ No suitable clothes for this weather.\n\n💡 Add more versatile items to your wardrobe!"
+
         # Get AI outfit
         try:
             outfit = await get_ai_outfit(weather, available_items, GROQ_API_KEY)
         except Exception:
             outfit = await get_fallback_outfit(weather, available_items)
-        
+
         # Format message
-        message = "☀️ *Good Morning!*\n\n🎯 *Today's Outfit*\n\n"
-        
+        message = "☀️ <b>Good Morning!</b>\n\n🎯 <b>Today's Outfit</b>\n\n"
+
         if outfit.get("outer"):
             message += f"🧥 Outer: {outfit['outer']}\n"
         if outfit.get("top"):
             message += f"👕 Top: {outfit['top']}\n"
         if outfit.get("bottom"):
             message += f"👖 Bottom: {outfit['bottom']}\n"
-        
-        message += f"\n💡 {outfit.get('reasoning', 'Enjoy your day!')}"
+
+        reasoning = outfit.get('reasoning', 'Enjoy your day!').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        message += f"\n💡 {reasoning}"
         
         # Mark items as worn
         worn_ids = [outfit.get("top_id"), outfit.get("bottom_id"), outfit.get("outer_id")]
@@ -214,18 +215,23 @@ async def format_day_message() -> str:
     names, names_plural = await get_name_days()
     party_advice = get_party_advice()
 
-    return f"""🌟 *GOOD MORNING, LAS VEGAS!* 🌟
+    # Escape special HTML characters in variable content
+    names_escaped = names.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    descriptor_comment_escaped = descriptor_comment.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    party_advice_escaped = party_advice.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
-This is your daily dose of *"What Day Is It, Anyway?"* – I've got the answers you're too lazy to look up yourself!
+    return f"""🌟 <b>GOOD MORNING, LAS VEGAS!</b> 🌟
 
-🌡️ *Today is {day_of_week}*, and on the *Insane Scale* we're clocking in at a {descriptor} {temp_f}°F!
-{descriptor_comment}
+This is your daily dose of <i>"What Day Is It, Anyway?"</i> – I've got the answers you're too lazy to look up yourself!
 
-🎉 *Name Day Alert!*
-{names} {names_plural} celebrating their Name Day today! If you know 'em, give 'em a high-five, a donut, or at least a weird look.
-Just {party_advice}
+🌡️ <b>Today is {day_of_week}</b>, and on the <b>Insane Scale</b> we're clocking in at a {descriptor} {temp_f}°F!
+{descriptor_comment_escaped}
 
-🚦 *Traffic Snapshot:* Probably still backed up on the 15. Shocking, right?
+🎉 <b>Name Day Alert!</b>
+{names_escaped} {names_plural} celebrating their Name Day today! If you know 'em, give 'em a high-five, a donut, or at least a weird look.
+Just {party_advice_escaped}
+
+🚦 <b>Traffic Snapshot:</b> Probably still backed up on the 15. Shocking, right?
 
 Remember: Life's too short to remember weekdays—that's my job. Stay awesome, Vegas!"""
 

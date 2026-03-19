@@ -49,25 +49,25 @@ async def get_weather(
     params = {
         "latitude": latitude,
         "longitude": longitude,
-        "current": "temperature_2m,weather_code,humidity,wind_speed_10m",
+        "current": "temperature_2m,weather_code,relative_humidity_2m,wind_speed_10m",
         "timezone": "auto"
     }
-    
+
     async with httpx.AsyncClient(timeout=timeout) as client:
         response = await client.get(OPEN_METEO_URL, params=params)
         response.raise_for_status()
         data = response.json()
-    
+
     current = data.get("current", {})
-    
+
     # Map WMO weather codes to human-readable conditions
     weather_code = current.get("weather_code", 0)
     conditions = _decode_weather_code(weather_code)
-    
+
     return WeatherData(
         temperature=current.get("temperature_2m", 20.0),
         conditions=conditions,
-        humidity=current.get("humidity"),
+        humidity=current.get("relative_humidity_2m"),
         wind_speed=current.get("wind_speed_10m")
     )
 

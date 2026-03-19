@@ -31,12 +31,12 @@ async def daily_outfit_job(context) -> None:
             logger.info("No suitable outfit found for daily suggestion")
             return
 
-        message = "☀️ *Good Morning!*\n\n" + _format_outfit_message(outfit)
+        message = "☀️ <b>Good Morning!</b>\n\n" + _format_outfit_message(outfit)
 
         await context.bot.send_message(
             chat_id=config.allowed_user_id,
             text=message,
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
 
         worn_ids = [outfit.get("top_id"), outfit.get("bottom_id"), outfit.get("outer_id")]

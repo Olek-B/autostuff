@@ -63,18 +63,18 @@ async def cmd_help(update: Update, context) -> None:
         return
 
     await update.message.reply_text(
-        "📖 *AutoStuff Help*\n\n"
-        "*AutoClothes Commands:*\n"
+        "📖 <b>AutoStuff Help</b>\n\n"
+        "<b>AutoClothes Commands:</b>\n"
         "/start - Welcome message\n"
         "/outfit - Generate outfit for current weather\n"
         "/add - Add item: /add \"Blue Shirt\" top 15 30\n"
         "/list - Show all wardrobe items\n"
         "/reset_laundry - Clear wear history\n\n"
-        "*Categories:*\n"
+        "<b>Categories:</b>\n"
         "top, bottom, shoes, outer\n\n"
-        "*Temperature:*\n"
+        "<b>Temperature:</b>\n"
         "Specify min and max temp in Celsius for when the item is suitable.",
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
 
 
@@ -108,7 +108,7 @@ async def generate_outfit(context) -> Optional[dict]:
 
 def _format_outfit_message(outfit: dict) -> str:
     """Format outfit dict into readable Telegram message."""
-    message = "🎯 *Today's Outfit*\n\n"
+    message = "🎯 <b>Today's Outfit</b>\n\n"
 
     if outfit.get("outer"):
         message += f"🧥 Outer: {outfit['outer']}\n"
@@ -117,7 +117,8 @@ def _format_outfit_message(outfit: dict) -> str:
     if outfit.get("bottom"):
         message += f"👖 Bottom: {outfit['bottom']}\n"
 
-    message += f"\n💡 {outfit.get('reasoning', 'Enjoy your day!')}"
+    reasoning = outfit.get('reasoning', 'Enjoy your day!').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    message += f"\n💡 {reasoning}"
     return message
 
 
@@ -139,7 +140,7 @@ async def cmd_outfit(update: Update, context) -> None:
             return
 
         message = _format_outfit_message(outfit)
-        await update.message.reply_text(message, parse_mode="Markdown")
+        await update.message.reply_text(message, parse_mode="HTML")
 
         worn_ids = [outfit.get("top_id"), outfit.get("bottom_id"), outfit.get("outer_id")]
         worn_ids = [id_ for id_ in worn_ids if id_ is not None]
@@ -268,7 +269,7 @@ async def cmd_list(update: Update, context) -> None:
                     )
                 message += "\n"
 
-        await update.message.reply_text(message, parse_mode="Markdown")
+        await update.message.reply_text(message, parse_mode="HTML")
 
     except Exception as e:
         logger.error(f"Database error listing items: {e}")
