@@ -1,18 +1,21 @@
 """
-AutoStuff Web App - Flask endpoints for scheduled tasks.
+AutoStuff Web App - Flask endpoints for scheduled tasks and Telegram webhook.
 Deploy on PythonAnywhere free tier and trigger via cron-job.org
 
 Endpoints:
-    GET /daily-outfit?key=SECRET_KEY  - Send daily outfit suggestion
-    GET /discord-day?key=SECRET_KEY   - Send "what day is it" message
-    GET /reset-laundry?key=SECRET_KEY - Reset weekly laundry tracking
-    GET /health                       - Health check
+    POST /webhook                 - Telegram webhook receiver
+    GET  /set-webhook?key=SECRET  - Register webhook with Telegram (one-time)
+    GET  /daily-outfit?key=SECRET - Send daily outfit suggestion
+    GET  /discord-day?key=SECRET  - Send "what day is it" message
+    GET  /reset-laundry?key=SECRET- Reset weekly laundry tracking
+    GET  /health                  - Health check
 
 PythonAnywhere Setup:
     1. Upload files to /home/yourusername/autoclothes/
     2. Create web app pointing to this file
     3. Set environment variables in PythonAnywhere dashboard
     4. Configure cron-job.org to hit endpoints on schedule
+    5. Call /set-webhook?key=SECRET once to register webhook
 
 cron-job.org Schedule:
     Daily outfit:    0 7 * * *    → https://yourusername.pythonanywhere.com/daily-outfit?key=xxx
@@ -60,6 +63,9 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 LATITUDE = float(os.environ.get("LATITUDE", "51.5074"))
 LONGITUDE = float(os.environ.get("LONGITUDE", "-0.1278"))
 
+# Telegram webhook URL (PythonAnywhere)
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "https://Dailystuff.pythonanywhere.com")
+
 if not SECRET_KEY:
     raise ValueError("SECRET_KEY environment variable is required")
 
@@ -76,7 +82,41 @@ def check_auth(key: str) -> bool:
 # TELEGRAM HELPERS
 # =============================================================================
 
-async def send_telegram_message(text: str, chat_id: int = None) -> bool:
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters
+
+# Build Telegram application for webhook processing
+def build_telegram_app() -> Application:
+    """Build Telegram application with all handlers."""
+    # Import handlers from modules
+    from modules.autoclothes.handlers import (
+        cmd_start, cmd_help, cmd_outfit, cmd_add, cmd_list, cmd_reset_laundry,
+        is_authorized
+    )
+    
+    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    
+    # Register command handlers
+    app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("help", cmd_help))
+    app.add_handler(CommandHandler("outfit", cmd_outfit))
+    app.add_handler(CommandHandler("add", cmd_add))
+    app.add_handler(CommandHandler("list", cmd_list))
+    app.add_handler(CommandHandler("reset_laundry", cmd_reset_laundry))
+    
+    return app
+
+# Global Telegram app instance
+telegram_app = None
+
+def get_telegram_app() -> Application:
+    """Get or create Telegram application instance."""
+    global telegram_app
+    if telegram_app is None:
+        telegram_app = build_telegram_app()
+    return telegram_app
+
+async def send_telegram_message(text: str, chat_id: int = None, use_html: bool = True) -> bool:
     """Send message via Telegram bot API."""
     import httpx
 
@@ -86,10 +126,13 @@ async def send_telegram_message(text: str, chat_id: int = None) -> bool:
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     data = {
         "chat_id": chat_id,
-        "text": text,
-        "parse_mode": "HTML"
+        "text": text
     }
     
+    # Only use HTML parse mode if message contains HTML tags
+    if use_html and ('<' in text and '>' in text):
+        data["parse_mode"] = "HTML"
+
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(url, json=data, timeout=10.0)
@@ -265,6 +308,159 @@ async def send_day_message() -> bool:
 def health():
     """Health check endpoint."""
     return jsonify({"status": "ok", "service": "autostuff"}), 200
+
+
+@app.route("/webhook", methods=["POST"])
+async def webhook():
+    """
+    Telegram webhook receiver.
+    Telegram sends updates to this endpoint when users interact with the bot.
+    """
+    if not TELEGRAM_BOT_TOKEN:
+        logger.error("Telegram not configured")
+        return jsonify({"error": "Telegram not configured"}), 503
+    
+    try:
+        # Get the update from Telegram
+        update_data = request.get_json()
+        if not update_data:
+            logger.warning("Empty update received")
+            return jsonify({"status": "ok"}), 200
+        
+        # Convert to telegram Update object
+        update = Update.de_json(update_data)
+        
+        # Process the update
+        tg_app = get_telegram_app()
+        await tg_app.process_update(update)
+        
+        logger.info(f"Processed update: {update.update_id}")
+        return jsonify({"status": "ok"}), 200
+        
+    except Exception as e:
+        logger.exception(f"Error processing webhook: {e}")
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+
+@app.route("/set-webhook")
+async def set_webhook():
+    """
+    Register webhook with Telegram (one-time setup).
+    Usage: GET /set-webhook?key=SECRET_KEY
+    
+    This tells Telegram to send updates to this webhook URL.
+    """
+    if not check_auth(request.args.get("key")):
+        return jsonify({"error": "Unauthorized"}), 403
+    
+    if not TELEGRAM_BOT_TOKEN:
+        return jsonify({"error": "Telegram not configured"}), 503
+    
+    import httpx
+    
+    # Build webhook URL
+    webhook_url = f"{WEBHOOK_URL}/webhook"
+    
+    # Set webhook with Telegram
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook"
+    data = {
+        "url": webhook_url,
+        "allowed_updates": ["message", "callback_query"]
+    }
+    
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(url, json=data)
+            response.raise_for_status()
+            result = response.json()
+        
+        if result.get("ok"):
+            logger.info(f"Webhook set to: {webhook_url}")
+            return jsonify({
+                "status": "ok",
+                "webhook_url": webhook_url,
+                "message": "Webhook registered successfully"
+            }), 200
+        else:
+            logger.error(f"Telegram error: {result}")
+            return jsonify({
+                "status": "error",
+                "error": result.get("description", "Unknown error")
+            }), 400
+            
+    except Exception as e:
+        logger.exception(f"Error setting webhook: {e}")
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+
+@app.route("/delete-webhook")
+async def delete_webhook():
+    """
+    Remove webhook from Telegram.
+    Usage: GET /delete-webhook?key=SECRET_KEY
+    
+    Use this if you want to switch back to long polling.
+    """
+    if not check_auth(request.args.get("key")):
+        return jsonify({"error": "Unauthorized"}), 403
+    
+    if not TELEGRAM_BOT_TOKEN:
+        return jsonify({"error": "Telegram not configured"}), 503
+    
+    import httpx
+    
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/deleteWebhook"
+    
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(url)
+            response.raise_for_status()
+            result = response.json()
+        
+        if result.get("ok"):
+            logger.info("Webhook deleted")
+            return jsonify({
+                "status": "ok",
+                "message": "Webhook removed successfully"
+            }), 200
+        else:
+            return jsonify({
+                "status": "error",
+                "error": result.get("description", "Unknown error")
+            }), 400
+            
+    except Exception as e:
+        logger.exception(f"Error deleting webhook: {e}")
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+
+@app.route("/webhook-info")
+async def webhook_info():
+    """
+    Get current webhook status from Telegram.
+    Usage: GET /webhook-info?key=SECRET_KEY
+    """
+    if not check_auth(request.args.get("key")):
+        return jsonify({"error": "Unauthorized"}), 403
+    
+    if not TELEGRAM_BOT_TOKEN:
+        return jsonify({"error": "Telegram not configured"}), 503
+    
+    import httpx
+    
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getWebhookInfo"
+    
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            result = response.json()
+        
+        return jsonify(result.get("result", {})), 200
+            
+    except Exception as e:
+        logger.exception(f"Error getting webhook info: {e}")
+        return jsonify({"status": "error", "error": str(e)}), 500
 
 
 @app.route("/daily-outfit")

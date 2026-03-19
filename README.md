@@ -146,9 +146,19 @@ PythonAnywhere free tier doesn't include always-on tasks, but you can use:
    GROQ_API_KEY=your_key
    LATITUDE=51.5074
    LONGITUDE=-0.1278
+   WEBHOOK_URL=https://yourusername.pythonanywhere.com
    ```
 
-5. **Configure cron-job.org** (free external cron service):
+5. **Set Up Telegram Webhook** (one-time setup):
+
+   After reloading your web app, register the webhook with Telegram:
+   ```bash
+   curl "https://yourusername.pythonanywhere.com/set-webhook?key=YOUR_SECRET"
+   ```
+   
+   This tells Telegram to send all bot updates to your webhook URL.
+
+6. **Configure cron-job.org** (free external cron service):
 
    Sign up at [cron-job.org](https://cron-job.org) and add these URLs:
 
@@ -158,11 +168,21 @@ PythonAnywhere free tier doesn't include always-on tasks, but you can use:
    | What Day Is It | `https://yourusername.pythonanywhere.com/discord-day?key=YOUR_SECRET` | `0 8 * * *` (8:00 AM) |
    | Weekly Laundry | `https://yourusername.pythonanywhere.com/reset-laundry?key=YOUR_SECRET` | `0 2 * * 0` (Sunday 2:00 AM) |
 
-6. **Test Endpoints**:
+7. **Test Endpoints**:
    ```bash
    curl "https://yourusername.pythonanywhere.com/health"
    curl "https://yourusername.pythonanywhere.com/daily-outfit?key=YOUR_SECRET"
+   
+   # Check webhook status
+   curl "https://yourusername.pythonanywhere.com/webhook-info?key=YOUR_SECRET"
    ```
+
+8. **Use Bot Commands** (in Telegram):
+   - `/start` - Welcome message
+   - `/add "Blue Shirt" top 15 30` - Add clothing item
+   - `/list` - View wardrobe
+   - `/outfit` - Get outfit suggestion
+   - `/help` - Show help
 
 ### Option 2: Always-On Task (Paid Tier)
 
@@ -183,6 +203,9 @@ Run the web app on PythonAnywhere (free) and run bots locally:
 
 ## Bot Commands
 
+**Webhook Mode** (PythonAnywhere free tier):
+Commands work via Telegram webhook - no always-on task needed!
+
 | Command | Description |
 |---------|-------------|
 | `/start` | Welcome message and bot info |
@@ -191,6 +214,14 @@ Run the web app on PythonAnywhere (free) and run bots locally:
 | `/list` | View wardrobe inventory |
 | `/reset_laundry` | Clear wear history manually |
 | `/help` | Show help message |
+
+### Webhook Management
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /set-webhook?key=SECRET` | Register webhook with Telegram |
+| `GET /delete-webhook?key=SECRET` | Remove webhook (switch to polling) |
+| `GET /webhook-info?key=SECRET` | Check webhook status |
 
 ### Adding Items
 
