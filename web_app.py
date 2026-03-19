@@ -133,7 +133,7 @@ async def get_daily_outfit() -> str:
         
     except Exception as e:
         logger.exception(f"Error generating outfit: {e}")
-        return "⚠️ Outfit service temporarily unavailable."
+        return "Outfit service temporarily unavailable."
 
 
 # =============================================================================

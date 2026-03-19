@@ -7,21 +7,26 @@ import aiosqlite
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Any
+from contextlib import asynccontextmanager
 
 # Database location in user's home directory for PythonAnywhere persistence
 DB_PATH = Path.home() / "autoclothes_wardrobe.db"
 
 
-async def get_connection() -> aiosqlite.Connection:
-    """Get async database connection with row factory."""
+@asynccontextmanager
+async def get_connection():
+    """Get async database connection with row factory (context manager)."""
     conn = await aiosqlite.connect(DB_PATH)
     conn.row_factory = aiosqlite.Row
-    return conn
+    try:
+        yield conn
+    finally:
+        await conn.close()
 
 
 async def init_database() -> None:
     """Initialize database schema with wardrobe and config tables."""
-    async with await get_connection() as conn:
+    async with get_connection() as conn:
         # Wardrobe table: stores clothing items with temperature ranges
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS wardrobe (
@@ -47,7 +52,7 @@ async def init_database() -> None:
 
 async def set_config(key: str, value: str) -> None:
     """Store configuration value (API keys, tokens, settings)."""
-    async with await get_connection() as conn:
+    async with get_connection() as conn:
         await conn.execute(
             "INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)",
             (key, value)
@@ -57,7 +62,7 @@ async def set_config(key: str, value: str) -> None:
 
 async def get_config(key: str) -> Optional[str]:
     """Retrieve configuration value by key."""
-    async with await get_connection() as conn:
+    async with get_connection() as conn:
         cursor = await conn.execute(
             "SELECT value FROM config WHERE key = ?",
             (key,)
@@ -68,7 +73,7 @@ async def get_config(key: str) -> Optional[str]:
 
 async def get_all_config() -> dict[str, str]:
     """Retrieve all configuration values as dictionary."""
-    async with await get_connection() as conn:
+    async with get_connection() as conn:
         cursor = await conn.execute("SELECT key, value FROM config")
         return {row["key"]: row["value"] async for row in cursor}
 
@@ -83,7 +88,7 @@ async def add_wardrobe_item(
     Add new clothing item to wardrobe.
     Returns the ID of the inserted item.
     """
-    async with await get_connection() as conn:
+    async with get_connection() as conn:
         cursor = await conn.execute(
             """INSERT INTO wardrobe (item_name, category, min_temp, max_temp, last_worn_date)
                VALUES (?, ?, ?, ?, NULL)""",
@@ -95,7 +100,7 @@ async def add_wardrobe_item(
 
 async def list_wardrobe_items() -> list[dict[str, Any]]:
     """List all wardrobe items with their details."""
-    async with await get_connection() as conn:
+    async with get_connection() as conn:
         cursor = await conn.execute(
             "SELECT id, item_name, category, min_temp, max_temp, last_worn_date FROM wardrobe ORDER BY category, item_name"
         )
@@ -114,7 +119,7 @@ async def get_items_for_weather(
     """
     cutoff_date = (datetime.now() - timedelta(days=days_since_worn)).isoformat()
     
-    async with await get_connection() as conn:
+    async with get_connection() as conn:
         cursor = await conn.execute(
             """SELECT id, item_name, category, min_temp, max_temp, last_worn_date 
                FROM wardrobe 
@@ -128,7 +133,7 @@ async def get_items_for_weather(
 
 async def mark_item_worn(item_id: int) -> None:
     """Mark an item as worn today (update last_worn_date)."""
-    async with await get_connection() as conn:
+    async with get_connection() as conn:
         await conn.execute(
             "UPDATE wardrobe SET last_worn_date = ? WHERE id = ?",
             (datetime.now().isoformat(), item_id)
@@ -138,7 +143,7 @@ async def mark_item_worn(item_id: int) -> None:
 
 async def mark_items_worn(item_ids: list[int]) -> None:
     """Mark multiple items as worn today."""
-    async with await get_connection() as conn:
+    async with get_connection() as conn:
         await conn.execute(
             "UPDATE wardrobe SET last_worn_date = ? WHERE id IN ({})".format(
                 ",".join("?" * len(item_ids))
@@ -153,7 +158,7 @@ async def reset_weekly_laundry() -> int:
     Reset laundry tracking by clearing last_worn_date for all items.
     Returns the number of items reset.
     """
-    async with await get_connection() as conn:
+    async with get_connection() as conn:
         cursor = await conn.execute(
             "UPDATE wardrobe SET last_worn_date = NULL"
         )
@@ -163,7 +168,7 @@ async def reset_weekly_laundry() -> int:
 
 async def delete_wardrobe_item(item_id: int) -> bool:
     """Delete an item from wardrobe by ID. Returns True if deleted."""
-    async with await get_connection() as conn:
+    async with get_connection() as conn:
         cursor = await conn.execute(
             "DELETE FROM wardrobe WHERE id = ?",
             (item_id,)
@@ -174,7 +179,7 @@ async def delete_wardrobe_item(item_id: int) -> bool:
 
 async def get_wardrobe_stats() -> dict[str, int]:
     """Get wardrobe statistics by category."""
-    async with await get_connection() as conn:
+    async with get_connection() as conn:
         cursor = await conn.execute(
             """SELECT category, COUNT(*) as count 
                FROM wardrobe 
