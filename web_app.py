@@ -25,6 +25,7 @@ cron-job.org Schedule:
 
 import os
 import logging
+import httpx
 from datetime import datetime, timedelta
 from flask import Flask, request, jsonify
 
@@ -118,26 +119,31 @@ def get_telegram_app() -> Application:
 
 async def send_telegram_message(text: str, chat_id: int = None, use_html: bool = True) -> bool:
     """Send message via Telegram bot API."""
-    import httpx
-
     if chat_id is None:
         chat_id = ALLOWED_USER_ID
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     data = {
-        "chat_id": chat_id,
+        "chat_id": str(chat_id),
         "text": text
     }
-    
+
     # Only use HTML parse mode if message contains HTML tags
     if use_html and ('<' in text and '>' in text):
         data["parse_mode"] = "HTML"
 
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(url, json=data, timeout=10.0)
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(url, data=data)
             response.raise_for_status()
+            result = response.json()
+            if not result.get("ok"):
+                logger.error(f"Telegram API error: {result.get('description', 'Unknown error')}")
+                return False
             return True
+    except httpx.HTTPStatusError as e:
+        logger.error(f"Telegram HTTP error: {e.response.status_code} - {e.response.text}")
+        return False
     except Exception as e:
         logger.error(f"Telegram API error: {e}")
         return False
@@ -355,9 +361,7 @@ async def set_webhook():
     
     if not TELEGRAM_BOT_TOKEN:
         return jsonify({"error": "Telegram not configured"}), 503
-    
-    import httpx
-    
+
     # Build webhook URL
     webhook_url = f"{WEBHOOK_URL}/webhook"
     
@@ -406,9 +410,7 @@ async def delete_webhook():
     
     if not TELEGRAM_BOT_TOKEN:
         return jsonify({"error": "Telegram not configured"}), 503
-    
-    import httpx
-    
+
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/deleteWebhook"
     
     try:
@@ -445,9 +447,7 @@ async def webhook_info():
     
     if not TELEGRAM_BOT_TOKEN:
         return jsonify({"error": "Telegram not configured"}), 503
-    
-    import httpx
-    
+
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getWebhookInfo"
     
     try:
