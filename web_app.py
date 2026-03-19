@@ -34,6 +34,21 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 # =============================================================================
+# DATABASE INITIALIZATION
+# =============================================================================
+
+# Initialize database on app startup
+import asyncio
+from database import init_database
+
+try:
+    asyncio.run(init_database())
+    logger.info("Database initialized successfully")
+except Exception as e:
+    logger.error(f"Database initialization failed: {e}")
+    raise
+
+# =============================================================================
 # CONFIGURATION
 # =============================================================================
 
